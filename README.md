@@ -2,9 +2,9 @@
 
 Native SwiftUI + IOKit app for Turtle Beach Burst II Air on macOS 13+.
 No Windows, VM, Python backend, or input interception. USB receiver presence is
-event-driven. While foregrounded, the app checks settings every three seconds
-(skipping checks during another operation) to follow the physical DPI button
-and wireless availability. Periodic checks pause when the app is inactive.
+event-driven. While foregrounded, the app uses a dedicated active-DPI check and refreshes the
+full settings/battery snapshot every 15 seconds. Only one stage check runs at a time;
+receiver checks are slower than wired checks. See [live settings](docs/live-settings.md). Periodic checks pause when the app is inactive.
 Quit after applying if you do not need live status.
 
 Independent, unofficial open-source project. Not affiliated with or endorsed by

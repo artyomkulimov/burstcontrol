@@ -17,15 +17,38 @@ import AppKit
     private let monitor = ConnectionMonitor()
     private var loop: Task<Void, Never>?
     private var generation = 0
+    private var stageReadInFlight = false
+    private var lastRefreshAttempt = Date.distantPast
     func start() {
         guard loop == nil else { return }
         monitor.changed = { [weak self] in Task { @MainActor in self?.presenceChanged() } }
         presenceChanged()
         loop = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 75_000_000)
                 guard !Task.isCancelled else { break }
-                if NSApp.isActive { self?.refresh() }
+                guard let self, NSApp.isActive else { continue }
+                if Date().timeIntervalSince(self.lastRefreshAttempt) >= (self.connected ? 15 : 3) {
+                    self.refresh()
+                } else { self.refreshStage() }
+            }
+        }
+    }
+    func refreshStage() {
+        guard connected, !busy, !stageReadInFlight, conflict == nil else { return }
+        stageReadInFlight = true
+        let token = generation
+        Task {
+            defer { stageReadInFlight = false }
+            do {
+                let update = try await MouseService.shared.activeStage()
+                guard token == generation, !busy, conflict == nil else { return }
+                guard saved?.profile == update.profile else { lastRead = nil; refresh(); return }
+                saved?.sensor[1] = update.stage
+                draft?.sensor[1] = update.stage
+            } catch {
+                // Slow, complete read distinguishes transient errors from disconnects.
+                if token == generation, !busy { lastRead = nil; refresh() }
             }
         }
     }
@@ -37,6 +60,7 @@ import AppKit
     }
     func refresh() {
         guard !busy, conflict == nil else { return }
+        lastRefreshAttempt = Date()
         guard monitor.connected else { connected = false; status = "Not connected"; return }
         busy = true
         let token = generation

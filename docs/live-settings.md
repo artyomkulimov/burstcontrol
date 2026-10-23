@@ -1,8 +1,14 @@
 # Live settings
 
 Receiver presence uses IOHIDManager matching/removal callbacks without opening
-an input stream. Foreground checks every three seconds read configuration through
-the serialized MouseService actor. Busy reads/writes are never queued by the timer.
+an input stream. Foreground active-stage checks use the serialized MouseService actor with a
+75 ms scheduling interval and at most one stage request in flight. The stage path
+reads profile, sensor block, and profile again; it does not fetch unrelated settings
+or battery. Full snapshots run every 15 seconds, or on reconnect/failure. Wired
+read exchanges use a 10 ms settle delay validated on this mouse; receiver exchanges
+retain 50 ms. Writes keep their original timing. This is faster polling, not an
+instant event subscription, and receiver updates can take longer. Busy reads/writes
+are skipped rather than queued by the timer.
 The app checks again on foreground activation; periodic checks stop when inactive.
 A receiver being present is not treated as proof the wireless mouse is responding.
 Failed transactions display “Mouse not responding” rather than claiming powered-off.

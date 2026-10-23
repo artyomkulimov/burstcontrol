@@ -19,7 +19,9 @@ final class HIDConnection {
         products.map { [kIOHIDVendorIDKey: 0x10f5, kIOHIDProductIDKey: $0,
                         kIOHIDDeviceUsagePageKey: 0xff00, kIOHIDDeviceUsageKey: 1] }
     }
-    init() throws {
+    private let fastReads: Bool
+    init(fastReads: Bool = false) throws {
+        self.fastReads = fastReads
         manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerSetDeviceMatchingMultiple(manager, Self.matches as CFArray)
         let devices = (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>) ?? []
@@ -54,7 +56,7 @@ final class HIDConnection {
         }
         guard sent == kIOReturnSuccess else { throw MouseError("USB send failed (\(sent)). Reconnect the dongle and refresh.") }
         // Vendor transaction needs time to cross the wireless link. This sleeps only the worker.
-        Thread.sleep(forTimeInterval: 0.05)
+        Thread.sleep(forTimeInterval: wired && fastReads ? 0.01 : 0.05)
         var reply = [UInt8](repeating: 0, count: 64)
         reply[0] = 3
         var length = reply.count

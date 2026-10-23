@@ -115,8 +115,16 @@ actor MouseService {
         return settings
     }
     func read() throws -> Settings { try snapshot(HIDConnection()) }
+    func activeStage() throws -> (profile: [UInt8], stage: UInt8) {
+        let connection = try HIDConnection(fastReads: true)
+        let profile = try connection.read(kind: 1, size: 2)
+        guard profile.count == 2, profile[0] < profile[1], profile[1] <= 5 else { throw MouseError("Unexpected profile") }
+        let sensor = try connection.read(kind: 2, profile: profile[0], sub: 1, size: 40)
+        guard sensor[1] < 5, try connection.read(kind: 1, size: 2) == profile else { throw MouseError("Stage changed during read") }
+        return (profile, sensor[1])
+    }
     func readLive() throws -> (Settings, DeviceTelemetry) {
-        let connection = try HIDConnection()
+        let connection = try HIDConnection(fastReads: true)
         let settings = try snapshot(connection)
         let status = try? connection.read(kind: 0, size: 10)
         return (settings, DeviceTelemetry(transport: connection.transportName, status: status))
