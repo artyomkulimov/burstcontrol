@@ -20,6 +20,19 @@ import Foundation
         precondition(motion.motionSync == 1)
         precondition(motion.sensor.dropLast() == original.sensor.dropLast())
         try motion.validate(against: original)
+        precondition(original.activeStage == 3)
+        var switched = original; switched.sensor[1] = 4
+        precondition(switched.activeStage == 4 && switched.sameConfiguration(as: original))
+        var edits = original; edits.setDPI(0, 650); edits.debounceMS = 2
+        let merged = switched.mergingEdits(from: edits, baseline: original)
+        precondition(merged.activeStage == 4 && merged.dpi(0) == 650 && merged.debounceMS == 2)
+        try merged.validate(against: switched)
+        var external = switched; external.pollingIndex = 3
+        precondition(!external.sameConfiguration(as: original))
+        let kept = external.mergingEdits(from: edits, baseline: original)
+        precondition(kept.pollingIndex == 3 && kept.dpi(0) == 650)
+        var invalid = original; invalid.sensor[1] = 255
+        precondition(invalid.activeStage == nil)
         var changed = original
         changed.setDPI(4, 26000)
         precondition(changed.dpi(4) == 26000)

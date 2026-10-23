@@ -1,8 +1,11 @@
 # Burst Control — Burst II Air for macOS
 
 Native SwiftUI + IOKit app for Turtle Beach Burst II Air on macOS 13+.
-No Windows, VM, Python backend, input interception, or background polling.
-The app communicates only when reading or applying settings; quit after applying.
+No Windows, VM, Python backend, or input interception. USB receiver presence is
+event-driven. While foregrounded, the app checks settings every three seconds
+(skipping checks during another operation) to follow the physical DPI button
+and wireless availability. Periodic checks pause when the app is inactive.
+Quit after applying if you do not need live status.
 
 Independent, unofficial open-source project. Not affiliated with or endorsed by
 Turtle Beach. Vendor software, firmware, and downloaded binaries are not included.
@@ -38,7 +41,7 @@ values for review; click Apply to restore them. Backups live in
 | Motion sync | Off, On | Vendor reads zero as off and any nonzero byte (including 255) as on; explicit edits write 0/1 |
 | Current profile | Read only | Profile changes during transactions are rejected |
 
-DPI stage enable/selection, wireless optimization, sleep interval, button
+DPI stage enabling and switching, wireless optimization, sleep interval, button
 assignments and custom surface calibration remain unexposed until their full
 semantics and supported values are verified. Unmapped bytes are preserved.
 Only USB dongle VID:PID `10f5:5004` is supported; cable/Bluetooth paths are untested.

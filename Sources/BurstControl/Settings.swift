@@ -7,6 +7,22 @@ struct Settings: Codable, Equatable, Sendable {
     var liftOff: [UInt8]
     var wireless: [UInt8]
     var profileIndex: Int { Int(profile[0]) }
+    var activeStage: Int? { sensor[1] < 5 ? Int(sensor[1]) : nil }
+    func sameConfiguration(as other: Settings) -> Bool {
+        var a = self; var b = other
+        a.sensor[1] = 0; b.sensor[1] = 0
+        return a == b
+    }
+    func mergingEdits(from draft: Settings, baseline: Settings) -> Settings {
+        var result = self
+        for i in 0..<5 where draft.dpi(i) != baseline.dpi(i) { result.setDPI(i, draft.dpi(i)) }
+        if draft.debounceMS != baseline.debounceMS { result.debounceMS = draft.debounceMS }
+        if draft.pollingIndex != baseline.pollingIndex { result.pollingIndex = draft.pollingIndex }
+        if draft.angleSnapping != baseline.angleSnapping { result.angleSnapping = draft.angleSnapping }
+        if draft.motionSync != baseline.motionSync { result.motionSync = draft.motionSync }
+        if draft.liftOffMode != baseline.liftOffMode { result.liftOffMode = draft.liftOffMode }
+        return result
+    }
     var pollingIndex: Int {
         get { Int(sensor[38]) }
         set { sensor[38] = UInt8(newValue) }
@@ -103,7 +119,9 @@ actor MouseService {
         try desired.validate(against: expected)
         let connection = try HIDConnection()
         let current = try snapshot(connection)
-        guard current == expected else { throw MouseError("The mouse changed since your last refresh. Refresh to load its current settings before applying.") }
+        guard current.sameConfiguration(as: expected) else { throw MouseError("The mouse changed since your last refresh. Refresh to load its current settings before applying.") }
+        var desired = desired
+        desired.sensor[1] = current.sensor[1]
         guard desired != current else { return current }
         try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
         let backup = Backup(created: Date(), device: "10f5:5004", settings: current)

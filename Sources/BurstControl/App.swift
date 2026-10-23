@@ -5,27 +5,81 @@ import AppKit
     @Published var saved: Settings?
     @Published var draft: Settings?
     @Published var busy = false
+    @Published var saving = false
     @Published var status = "Connect your mouse, then refresh."
     @Published var error: String?
     @Published var lastRead: Date?
     @Published var hasBackup = FileManager.default.fileExists(atPath: MouseService.lastBackupURL.path)
     var dirty: Bool { saved != nil && draft != saved }
+    @Published var connected = false
+    @Published var conflict: Settings?
+    private let monitor = ConnectionMonitor()
+    private var loop: Task<Void, Never>?
+    private var generation = 0
+    func start() {
+        guard loop == nil else { return }
+        monitor.changed = { [weak self] in Task { @MainActor in self?.presenceChanged() } }
+        presenceChanged()
+        loop = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled else { break }
+                if NSApp.isActive { self?.refresh() }
+            }
+        }
+    }
+    func presenceChanged() {
+        generation += 1
+        if !monitor.connected {
+            connected = false; status = "Receiver unplugged"; error = nil
+        } else { refresh() }
+    }
     func refresh() {
-        guard !busy else { return }; busy = true; error = nil; status = "Reading mouse…"
+        guard !busy, conflict == nil else { return }
+        guard monitor.connected else { connected = false; status = "Receiver unplugged"; return }
+        busy = true
+        let token = generation
+        if !connected { status = "Connecting…" }
         Task {
-            do { let value = try await MouseService.shared.read(); saved = value; draft = value; lastRead = Date(); status = "Read from mouse · ready" }
-            catch { self.error = error.localizedDescription; status = "Unable to read mouse" }
+            do {
+                let value = try await MouseService.shared.read()
+                guard token == generation else { busy = false; return }
+                if let saved, let draft, dirty {
+                    if saved.profile != value.profile || !saved.sameConfiguration(as: value) {
+                        conflict = value
+                    } else {
+                        self.draft = value.mergingEdits(from: draft, baseline: saved)
+                        self.saved = value
+                    }
+                } else { saved = value; draft = value }
+                connected = true; lastRead = Date(); status = "Connected"; error = nil
+            } catch {
+                if token == generation {
+                    connected = false
+                    let message = error.localizedDescription
+                    if message.contains("Input Monitoring") {
+                        status = "Permission needed"; self.error = message
+                    } else { status = "Mouse not responding"; self.error = nil }
+                }
+            }
             busy = false
         }
     }
+    func resolveConflict(keepEdits: Bool) {
+        guard let latest = conflict else { return }
+        if keepEdits, let saved, let draft, saved.profile == latest.profile {
+            self.draft = latest.mergingEdits(from: draft, baseline: saved)
+        } else { draft = latest }
+        saved = latest; conflict = nil
+    }
     func apply() {
         guard !busy, let desired = draft, let expected = saved else { return }
-        busy = true; error = nil; status = "Saving and verifying…"
+        busy = true; saving = true; error = nil; status = "Saving…"
         Task {
-            do { let value = try await MouseService.shared.apply(desired, expected: expected); saved = value; draft = value; lastRead = Date(); status = "Saved to mouse · read-back verified" }
+            do { let value = try await MouseService.shared.apply(desired, expected: expected); saved = value; draft = value; lastRead = Date(); status = "Connected" }
             catch { self.error = error.localizedDescription; status = "Check mouse settings" }
             hasBackup = FileManager.default.fileExists(atPath: MouseService.lastBackupURL.path)
-            busy = false
+            saving = false; busy = false
         }
     }
     func restore() {
@@ -61,15 +115,17 @@ struct ContentView: View {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable().frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Burst II Air").font(.headline)
-                    Text(model.saved.map { "2.4 GHz · Profile \($0.profileIndex + 1) of \($0.profile[1])" } ?? "2.4 GHz USB receiver")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                    Text("Burst II Air").font(.system(size: 22, weight: .semibold))
+                    Label(model.status, systemImage: model.connected ? "circle.fill" : "circle")
+                        .font(.system(size: 15)).foregroundStyle(model.connected ? .green : .secondary)
                 }
                 Spacer()
-                if model.busy { ProgressView().controlSize(.small) }
-                Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") }
-                    .help("Read settings from mouse").accessibilityLabel("Refresh")
-                    .disabled(model.busy || model.dirty).keyboardShortcut("r")
+                Menu {
+                    Text(model.saved.map { "Onboard profile \($0.profileIndex + 1) of \($0.profile[1])" } ?? "Burst II Air")
+                    Button("Load previous settings") { model.restore() }.disabled(!model.hasBackup || model.busy || !model.connected)
+                    Button("Show backup folder") { NSWorkspace.shared.open(MouseService.directory) }.disabled(!model.hasBackup)
+                } label: { Image(systemName: "ellipsis.circle").font(.title2) }
+                .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Device details")
             }.padding(20)
             Divider()
             if let settings = model.draft {
@@ -83,13 +139,22 @@ struct ContentView: View {
                         }
                     }
                     Section {
-                        ForEach(0..<5) { i in
-                            LabeledContent("Stage \(i + 1)") {
-                                DPIEditor(value: Binding(get: { model.draft?.dpi(i) ?? 800 }, set: { model.draft?.setDPI(i, $0) }))
+                        VStack(alignment: .leading, spacing: 18) {
+                            HStack {
+                                Text("DPI speeds").font(.system(size: 16, weight: .semibold))
+                                Spacer()
+                                if model.connected, let saved = model.saved, let stage = saved.activeStage {
+                                    Text("\(saved.dpi(stage)) DPI active").font(.system(size: 16, weight: .medium)).foregroundStyle(Color.accentColor)
+                                }
                             }
-                        }
-                    } header: { Text("DPI stages") } footer: {
-                        Text("50–26,000 DPI in steps of 50. Switch stages with the mouse’s DPI button.")
+                            HStack(spacing: 14) {
+                                ForEach(0..<5) { i in
+                                    DPIEditor(value: Binding(get: { model.draft?.dpi(i) ?? 800 }, set: { model.draft?.setDPI(i, $0) }), stage: i, active: model.connected && model.saved?.activeStage == i, changed: model.saved?.dpi(i) != model.draft?.dpi(i))
+                                }
+                            }
+                            Text("Click a value to edit. Switch speeds with the mouse’s DPI button.")
+                                .font(.system(size: 14)).foregroundStyle(.secondary)
+                        }.padding(.vertical, 12)
                     }
                     Section("Tracking") {
                         Picker("Lift-off distance", selection: model.binding(\.liftOffMode)) {
@@ -101,14 +166,14 @@ struct ContentView: View {
                         Toggle("Motion sync", isOn: Binding(get: { model.draft?.motionSyncEnabled ?? false }, set: { model.draft?.motionSyncEnabled = $0 }))
                             .help("Synchronizes sensor sampling with USB reports.")
                     }
-                }.formStyle(.grouped).disabled(model.busy)
+                }.formStyle(.grouped).disabled(model.saving)
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "cable.connector").font(.largeTitle).foregroundStyle(.secondary)
                     Text("Connect your mouse").font(.headline)
                     Text("Plug in the USB receiver and switch the mouse to 2.4 GHz.")
                         .foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    Button("Read settings") { model.refresh() }.disabled(model.busy)
+                    Text("Settings will appear automatically.").foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(30)
             }
             if let error = model.error {
@@ -116,28 +181,39 @@ struct ContentView: View {
                     .font(.callout).foregroundStyle(.orange).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(16)
             }
-            Divider()
-            HStack(spacing: 10) {
-                Text(model.dirty ? "Unsaved changes" : model.status)
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                Spacer()
-                Menu {
-                    Button("Load previous settings") { model.restore() }.disabled(!model.hasBackup || model.busy || model.saved == nil)
-                    Button("Show backup folder") { NSWorkspace.shared.open(MouseService.directory) }.disabled(!model.hasBackup)
-                } label: { Image(systemName: "clock.arrow.circlepath") }
-                    .menuStyle(.borderlessButton).fixedSize().help("Backups").accessibilityLabel("Backups")
-                Button("Revert") { model.draft = model.saved }.disabled(!model.dirty || model.busy)
-                Button("Apply") { model.apply() }.keyboardShortcut(.defaultAction)
-                    .disabled(!model.dirty || model.busy)
-            }.padding(16)
+            if let latest = model.conflict {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("The mouse’s settings changed while you were editing.")
+                    HStack {
+                        Button("Use mouse settings") { model.resolveConflict(keepEdits: false) }
+                        Button("Keep my edits") { model.resolveConflict(keepEdits: true) }
+                            .disabled(latest.profile != model.saved?.profile)
+                    }
+                }.padding(20)
+            }
+            if model.dirty {
+                Divider()
+                HStack {
+                    Text("Unsaved changes").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Revert") { model.draft = model.saved }.disabled(model.saving)
+                    Button("Apply") { model.apply() }.keyboardShortcut(.defaultAction)
+                        .disabled(model.busy || !model.connected || model.conflict != nil)
+                }.padding(20)
+            }
         }
-        .frame(minWidth: 520, idealWidth: 560, minHeight: 690, idealHeight: 740)
-        .onAppear { model.refresh() }
+        .font(.system(size: 16)).controlSize(.large)
+        .frame(minWidth: 700, idealWidth: 760, minHeight: 640, idealHeight: 700)
+        .onAppear { model.start() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refresh() }
     }
 }
 
 private struct DPIEditor: View {
     @Binding var value: Int
+    let stage: Int
+    let active: Bool
+    let changed: Bool
     @State private var text = ""
     @FocusState private var focused: Bool
     private var parsed: Int? {
@@ -145,18 +221,24 @@ private struct DPIEditor: View {
         return number
     }
     var body: some View {
-        HStack(spacing: 8) {
+        VStack(spacing: 8) {
+            Text("\(stage + 1)").font(.system(size: 13)).foregroundStyle(.secondary)
             TextField("DPI", text: $text)
-                .multilineTextAlignment(.trailing).frame(width: 75)
+                .labelsHidden()
+                .textFieldStyle(.plain).multilineTextAlignment(.center)
+                .font(.system(size: 25, weight: active ? .semibold : .regular, design: .rounded))
+                .foregroundStyle(active ? Color.accentColor : Color.primary)
+                .accessibilityLabel("DPI stage \(stage + 1)")
                 .focused($focused)
                 .onChange(of: text) { _ in if let number = parsed { value = number } }
                 .onChange(of: focused) { active in if !active { text = String(value) } }
                 .onChange(of: value) { number in if !focused { text = String(number) } }
                 .onAppear { text = String(value) }
-                .help("Enter a multiple of 50 between 50 and 26,000. Invalid input is reverted when leaving the field.")
-            Text("DPI").foregroundStyle(.secondary)
-            Stepper("Adjust DPI", value: $value, in: 50...26000, step: 50).labelsHidden()
-        }
+                .help("50–26,000 DPI, in steps of 50. Invalid input reverts when leaving the field.")
+            Capsule().fill(active ? Color.accentColor : Color.clear).frame(height: 3)
+            Text(changed ? "Edited" : active ? "Active" : " ")
+                .font(.system(size: 13)).foregroundStyle(changed ? Color.orange : Color.secondary)
+        }.frame(maxWidth: .infinity).padding(.vertical, 6)
     }
 }
 
