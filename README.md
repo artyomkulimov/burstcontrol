@@ -1,152 +1,169 @@
-# Burst Control — Burst II Air for macOS
+<div align="center">
+  <img src="Assets/AppIcon.png" width="88" height="88" alt="Burst Control icon">
+  <h1>Burst Control</h1>
+  <p>A native macOS companion for the Turtle Beach Burst II Air.</p>
+  <p>Adjust your mouse directly over USB. No Windows PC or virtual machine required.</p>
+  <p>
+    <a href="https://github.com/artyomkulimov/burstcontrol/actions/workflows/checks.yml"><img src="https://github.com/artyomkulimov/burstcontrol/actions/workflows/checks.yml/badge.svg" alt="Build and protocol checks"></a>
+    <img src="https://img.shields.io/badge/macOS-13%2B-333333" alt="macOS 13 or later">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+  </p>
+</div>
 
-Native SwiftUI + IOKit app for Turtle Beach Burst II Air on macOS 13+.
-No Windows, VM, Python backend, or input interception. USB receiver presence is
-event-driven. While foregrounded, the app uses a dedicated active-DPI check and refreshes the
-full settings/battery snapshot every 15 seconds. Only one stage check runs at a time;
-receiver checks are slower than wired checks. See [live settings](docs/live-settings.md). Periodic checks pause when the app is inactive.
-Quit after applying if you do not need live status.
+![Burst Control showing battery level, debounce, polling rate, five DPI stages, and tracking settings](docs/images/burst-control.png)
 
-Independent, unofficial open-source project. Not affiliated with or endorsed by
-Turtle Beach. Vendor software, firmware, and downloaded binaries are not included.
+## What you can do
 
-## Run
+- Set **debounce from 0 to 10 ms**.
+- Edit all **five DPI stages**, from 50 to 26,000 DPI in steps of 50.
+- See the active DPI stage as you switch with the mouse’s physical DPI button.
+- Choose **125, 250, 500, or 1,000 Hz** polling.
+- Adjust lift-off distance, angle snapping, and motion sync.
+- View the reported **battery percentage**, charging indicator, and connection type.
+- Connect through the **2.4 GHz receiver or USB cable**; cable takes priority when both are present.
 
-Build from source using the instructions below, quit any running copy, run `./install-app.sh`, then open `~/Applications/Burst Control.app`. Connect the mouse by USB cable or plug in its 2.4 GHz receiver and wake it.
-If macOS denies access, enable **Burst Control** in **System Settings → Privacy &
-Security → Input Monitoring**, then quit and reopen. The configuration feature
-report shares a HID interface with mouse input; the app never registers input
-callbacks or records keys/clicks. Local development builds are ad-hoc signed;
-rebuilding changes the signature and may leave a stale permission even when the
-toggle is on. Remove the old Burst Control entry with the minus button, then use
-plus to add `~/Applications/Burst Control.app`, enable it, and restart the app.
-If removal does not clear it, `tccutil reset ListenEvent local.burstcontrol.app`
-revokes only this app's Input Monitoring record; then add the installed app again.
-Keep using the installed copy. A stable path avoids duplicate registrations,
-but does not make ad-hoc signatures survive rebuilds. Distribution builds should
-use a consistent signing identity.
+The app detects USB connections automatically. Changes stay in a draft until you
+click **Apply**, with a backup before writing and a read-back check afterward.
+Unsaved edits survive disconnects; external settings changes are handled explicitly.
 
-Change controls and click **Apply to mouse**. Every write is backed up, then
-read back and compared. **Backups → Load previous settings** stages the prior
-values for review; click Apply to restore them. Backups live in
-`~/Library/Application Support/Burst Control/`.
+## Install from source
 
-| Control | Supported values | Evidence / limit |
-| --- | --- | --- |
-| Debounce | 0–10 ms | Actual change from 2 to 0 read back successfully |
-| Five DPI stage values | 50–26,000 in increments of 50 | Vendor encoding mapped; sensor block round-trip verified |
-| Polling rate | 125, 250, 500, 1000 Hz | Vendor enumeration mapped; sensor block round-trip verified |
-| Lift-off distance | Very low, Low | Vendor modes mapped; original-value write/read verified |
-| Angle snapping | Off, On | Vendor field mapped; sensor block round-trip verified |
-| Motion sync | Off, On | Vendor reads zero as off and any nonzero byte (including 255) as on; explicit edits write 0/1 |
-| Battery | 0–100%, read only | Status block 0, byte 5; charging flag at byte 7 |
-| Current profile | Read only | Profile changes during transactions are rejected |
+You need **macOS 13 or later** and **Apple’s Command Line Tools**. The native app
+uses SwiftUI and IOKit, with no third-party runtime dependencies. Python is not
+required.
 
-DPI stage enabling and switching, wireless optimization, sleep interval, button
-assignments and custom surface calibration remain unexposed until their full
-semantics and supported values are verified. Unmapped bytes are preserved.
-USB receiver `10f5:5004` and wired mouse `10f5:5002` are supported. Cable is preferred
-when both are present. Bluetooth is unsupported. Battery percentage and charging
-state come from the read-only device status block; invalid values display as unavailable.
-Changing settings has not been benchmarked for physical input latency. A firmware
-setting of 0 ms does not imply zero total latency. Power-cycle persistence is
-not yet tested. The app never flashes firmware.
-
-## Build and check
-
-Requires Apple's Command Line Tools and Swift:
+If you do not have the developer tools, run `xcode-select --install` and finish
+Apple’s installation dialog first. Then:
 
 ```sh
+git clone https://github.com/artyomkulimov/burstcontrol.git
+cd burstcontrol
 ./build-app.sh
-./test.sh
-.build/release/BurstControl --read
+./install-app.sh
+open "$HOME/Applications/Burst Control.app"
 ```
 
-`--verify-writes` rewrites the current sensor, debounce and lift-off values and
-checks full snapshots. It performs real hardware writes; use only intentionally.
-Protocol tests run against a captured fixture and do not need hardware.
+Quit an existing copy before running the installer. The build script creates
+`dist/Burst Control.app`; the installer copies it to `~/Applications`.
+These are locally built, ad-hoc-signed apps, not notarized releases.
 
-## Protocol evidence
+### Allow access to the mouse
 
-Recovered from the official BURST_II_AIR.dll 1.0.0.15. The Swift implementation
-checks headers, checksums, profile consistency, and read-back. Configuration
-transactions run serially on a worker actor, outside the UI and mouse input path.
+On first launch, enable **Burst Control** under **System Settings → Privacy &
+Security → Input Monitoring**, then quit and reopen the app.
 
-Sensor block: kind 2, active profile, sub 1, 40 bytes. DPI values are little-endian
-words at offsets 2/4/6/8/10, encoded as DPI/50−1. Byte 37 is angle snapping,
-38 polling index, 39 motion sync. Lift-off: kind 7, read four bytes/write one.
-Debounce: kind 6, one byte. Other bytes are preserved exactly.
+The configuration report shares a composite HID interface with mouse input, so
+macOS requires this permission to open it. Burst Control does not intercept
+movement, record keystrokes, or synthesize input.
 
-Vendor setter addresses: DPI `0x180155dc0`, polling `0x1801580e0`, angle snapping
-`0x180155400`, motion sync `0x180157f90`, lift-off `0x180155710`.
+<details>
+<summary>Permission is enabled, but the app still says it needs access</summary>
 
-## Original debounce investigation
+A rebuild changes the app’s ad-hoc signature. macOS can retain permission for the
+old signature even when the toggle appears enabled.
 
-The optional Python prototype is independent of the native app. To use it:
+1. Quit Burst Control.
+2. Remove its old entry from **Input Monitoring** using the minus button.
+3. Add `~/Applications/Burst Control.app` using the plus button and enable it.
+4. Reopen the installed app.
+
+If the stale entry persists, this command resets **only Burst Control’s** Input
+Monitoring grant:
 
 ```sh
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python burst_debounce.py
+tccutil reset ListenEvent local.burstcontrol.app
 ```
 
-Set 0 ms, or restore the original 2 ms:
+Then add and enable the installed app again. A stable installation path helps
+avoid duplicate copies; it does not make ad-hoc signatures survive rebuilds.
+
+</details>
+
+## Using Burst Control
+
+Plug in the mouse’s USB cable, or connect its receiver and switch the mouse to
+2.4 GHz. Settings load automatically.
+
+Click a DPI number to edit it. The underline marks the stage actually in use;
+**Edited** marks an unsaved value. Use the mouse’s DPI button to switch stages.
+Click **Apply** to save your edits, or **Revert** to discard them.
+
+The **••• device menu** contains onboard profile information and backup actions.
+**Load previous settings** stages the backup for review; Apply restores it.
+Backups are stored in `~/Library/Application Support/Burst Control/`.
+
+### Live updates and performance
+
+USB arrival/removal is event-driven. Active-DPI updates use a dedicated foreground
+read loop; full settings and battery refresh less often. Updates are polled, not
+instant push notifications, and receiver reads are slower than wired reads.
+Periodic checks pause when the app is inactive. There is no background helper,
+and you can quit the app after applying settings.
+
+See [live settings](docs/live-settings.md) for timing and conflict handling.
+
+## Compatibility and current limits
+
+| Connection | Status |
+| --- | --- |
+| USB cable (`10f5:5002`) | Settings reads and unchanged-value write/read-back checks tested |
+| 2.4 GHz receiver (`10f5:5004`) | Settings reads and writes tested; receiver battery reporting still needs hardware verification |
+| Bluetooth | Not supported |
+
+Development and hardware checks have been performed on an Apple silicon Mac.
+The app currently configures the active onboard profile; profile switching,
+button remapping, macros, custom surface calibration, and sleep settings are not
+exposed. Multiple devices of the same connection type are not supported.
+
+This is an early, unofficial project based on reverse engineering. A successful
+read-back confirms the stored configuration—it does not measure physical click
+latency, prove battery accuracy, or establish persistence across power cycles.
+A debounce setting of 0 ms does not mean zero total input latency. Unknown fields
+are preserved, and the app does not flash firmware.
+
+## How it works
+
+We inspected the official Burst II Air configuration DLL without running Windows,
+traced its setting handlers to USB commands, and reproduced the protocol using
+macOS HID feature reports. Small hardware experiments then checked the mappings.
+
+**[Read the reverse-engineering walkthrough →](docs/reverse-engineering.md)**
+
+It covers device discovery, packet checksums, configuration blocks, battery
+fields, and the differences between cable and receiver communication—including
+mistakes that the hardware checks helped uncover.
+
+Additional notes:
+
+- [Motion sync: why a value of 255 means On](docs/motion-sync.md)
+- [Original Python debounce prototype](docs/debounce-prototype.md)
+- [Reproducible app icon](Assets/README.md)
+
+## Development
 
 ```sh
-.venv/bin/python burst_debounce.py --set-ms 0
-.venv/bin/python burst_debounce.py --set-ms 2
+swift build       # Development executable
+./test.sh         # Offline protocol checks; no mouse required
 ```
 
-## Verified result
+For a development app bundle, use `CONFIGURATION=debug ./build-app.sh`.
+The command-line interface also supports read-only diagnostics:
 
-On 2026-10-23, initial device read returned 2 ms. The explicit write to 0 ms
-succeeded, as did immediate read-back and a fresh-process read after closing
-and reopening the HID handle. Power-cycle persistence has not yet been tested.
-This reads the firmware setting; it does not measure physical click latency.
-This original Python utility was tested only with the dongle; the native app also supports cable. Neither updates firmware.
+```sh
+.build/debug/BurstControl --read
+.build/debug/BurstControl --status
+```
 
-The captured settings fixture in `Tests/Fixtures/settings.json` contains device
-configuration bytes only. Local investigation logs are excluded from this repository.
-The Python prototype writes its own backups and transaction logs to `research/`.
+Quit the GUI before running hardware diagnostics so separate processes do not
+compete for the device. `--verify-writes` is a separate manual diagnostic that
+**performs real writes of the current values**; it is not part of the offline tests.
 
-## Protocol evidence
+Contributions and hardware reports are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md),
+or [open an issue](https://github.com/artyomkulimov/burstcontrol/issues) with your
+macOS version, connection type, and reproduction steps.
 
-Recovered by static analysis of the official BURST_II_AIR.dll version 1.0.0.15:
-https://cdn.turtlebeach.com/device/driver-dll/burst-ii-air/burst-ii-air_330-1.0.0.15-6400-v1.7z
+## License
 
-The downloaded archive MD5 matches its updater manifest:
-`412bb2c724a2d255291cd5fdc4c7a040`.
-
-Relevant DLL virtual addresses:
-
-- `0x18015c99f`: debounce read header construction.
-- `0x18014ee00`: debounce write header construction.
-- `0x18015d4d0`: read transport.
-- `0x1801638c0`: write transport.
-- `0x180162740`: dongle transaction acquire/release.
-
-Use interface 1, vendor usage page 0xff00, HID feature report 3. Requests are
-64 bytes: report ID, additive checksum of bytes 2–63, command, payload length,
-zero, target (1 = wireless), then payload. macOS returns variable-length replies:
-report ID, echoed command, status, payload length, zero, payload.
-
-Acquire/release: commands 0x80/0x81, no payload. Transactions use command 0x82.
-Read header: `40 00 06 00 00 00 00 01 00 00`.
-Write header: `40 01 06 00 00 00 00 01 00 VV`, where VV is the setting/checksum.
-Header reply appends the supported chunk size. Read data request: 0x81 plus
-57 zeros. Reply: 0x81 plus debounce byte; verify against header checksum.
-Write data: 0x81 plus debounce byte. Commit: 0xc0, expected reply `c0 00`.
-Always release the transaction. No arbitrary command scanning or firmware writes
-were used. Discovery GET_REPORT requests without a preceding command timed out;
-valid transactions succeeded after reproducing the vendor handshake.
-
-
-## Contributing and license
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development and protocol verification.
-Original project code is available under the [MIT license](LICENSE).
-
-Motion sync investigation: [protocol notes](docs/motion-sync.md).
-The reproducible raster app icon is documented in [Assets](Assets/README.md).
-
-Read [How the protocol was reverse engineered](docs/reverse-engineering.md) for the investigation, evidence, and limitations.
+[MIT](LICENSE). Independent project, not affiliated with or endorsed by Turtle
+Beach. Vendor software, downloaded installers, and firmware are not distributed
+in this repository.
