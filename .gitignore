@@ -1,0 +1,16 @@
+# Local investigation, vendor downloads, and device transaction logs
+research/
+# Generated app and build output
+.build/
+dist/
+.swiftpm/
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+# Local machine files and credentials
+.DS_Store
+.env
+.env.*
+!.env.example
