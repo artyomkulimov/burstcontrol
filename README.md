@@ -26,6 +26,15 @@ The app detects USB connections automatically. Changes stay in a draft until you
 click **Apply**, with a backup before writing and a read-back check afterward.
 Unsaved edits survive disconnects; external settings changes are handled explicitly.
 
+## Download
+
+[Download Burst Control for Apple silicon](https://github.com/artyomkulimov/burstcontrol/releases/latest)
+(macOS 13 or later). The app is Developer ID signed and notarized by Apple.
+
+Download the `.zip` from the release assets, extract it, and move **Burst Control**
+to Applications. Open it and grant Input Monitoring as described below. The
+release includes a SHA-256 checksum. Intel builds are not available yet.
+
 ## Install from source
 
 You need **macOS 13 or later** and **Apple’s Command Line Tools**. The native app
@@ -142,8 +151,7 @@ Additional notes:
 ## Release packaging
 
 See [the release guide](docs/releasing.md) for Developer ID signing, Apple
-notarization, and GitHub download packaging. Public app downloads are not yet
-available; the source installation instructions above work today.
+notarization, and GitHub download packaging.
 
 ## Development
 
