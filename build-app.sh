@@ -24,5 +24,11 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-codesign --force --sign - "$bundle"
+# Local builds remain ad-hoc signed. Distribution builds require an explicit identity.
+if [[ -n "${SIGNING_IDENTITY:-}" ]]; then
+    codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$bundle"
+else
+    codesign --force --sign - "$bundle"
+fi
+codesign --verify --strict --verbose=2 "$bundle"
 echo "Built: $bundle"

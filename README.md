@@ -139,6 +139,12 @@ Additional notes:
 - [Original Python debounce prototype](docs/debounce-prototype.md)
 - [Reproducible app icon](Assets/README.md)
 
+## Release packaging
+
+See [the release guide](docs/releasing.md) for Developer ID signing, Apple
+notarization, and GitHub download packaging. Public app downloads are not yet
+available; the source installation instructions above work today.
+
 ## Development
 
 ```sh
