@@ -12,6 +12,7 @@ import AppKit
     @Published var hasBackup = FileManager.default.fileExists(atPath: MouseService.lastBackupURL.path)
     var dirty: Bool { saved != nil && draft != saved }
     @Published var connected = false
+    @Published var telemetry: DeviceTelemetry?
     @Published var conflict: Settings?
     private let monitor = ConnectionMonitor()
     private var loop: Task<Void, Never>?
@@ -31,19 +32,20 @@ import AppKit
     func presenceChanged() {
         generation += 1
         if !monitor.connected {
-            connected = false; status = "Receiver unplugged"; error = nil
+            connected = false; status = "Not connected"; error = nil
         } else { refresh() }
     }
     func refresh() {
         guard !busy, conflict == nil else { return }
-        guard monitor.connected else { connected = false; status = "Receiver unplugged"; return }
+        guard monitor.connected else { connected = false; status = "Not connected"; return }
         busy = true
         let token = generation
         if !connected { status = "Connecting…" }
         Task {
             do {
-                let value = try await MouseService.shared.read()
+                let (value, telemetry) = try await MouseService.shared.readLive()
                 guard token == generation else { busy = false; return }
+                self.telemetry = telemetry
                 if let saved, let draft, dirty {
                     if saved.profile != value.profile || !saved.sameConfiguration(as: value) {
                         conflict = value
@@ -120,6 +122,16 @@ struct ContentView: View {
                         .font(.system(size: 15)).foregroundStyle(model.connected ? .green : .secondary)
                 }
                 Spacer()
+                if model.connected, let telemetry = model.telemetry {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if let percent = telemetry.batteryPercent {
+                            Label("\(percent)%", systemImage: telemetry.batterySymbol)
+                                .font(.system(size: 17, weight: .medium))
+                                .help(telemetry.charging == true ? "Charging" : "Battery level reported by mouse")
+                        } else { Text("Battery unavailable").font(.system(size: 14)).foregroundStyle(.secondary) }
+                        Text(telemetry.transport).font(.system(size: 13)).foregroundStyle(.secondary)
+                    }
+                }
                 Menu {
                     Text(model.saved.map { "Onboard profile \($0.profileIndex + 1) of \($0.profile[1])" } ?? "Burst II Air")
                     Button("Load previous settings") { model.restore() }.disabled(!model.hasBackup || model.busy || !model.connected)
@@ -171,7 +183,7 @@ struct ContentView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "cable.connector").font(.largeTitle).foregroundStyle(.secondary)
                     Text("Connect your mouse").font(.headline)
-                    Text("Plug in the USB receiver and switch the mouse to 2.4 GHz.")
+                    Text("Connect a USB cable, or plug in the receiver and switch the mouse to 2.4 GHz.")
                         .foregroundStyle(.secondary).multilineTextAlignment(.center)
                     Text("Settings will appear automatically.").foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(30)
@@ -244,11 +256,18 @@ private struct DPIEditor: View {
 
 @main struct BurstControlApp: App {
     init() {
-        if CommandLine.arguments.contains("--read") || CommandLine.arguments.contains("--verify-writes") {
+        if CommandLine.arguments.contains("--read") || CommandLine.arguments.contains("--verify-writes") || CommandLine.arguments.contains("--status") {
             do {
                 let semaphore = DispatchSemaphore(value: 0)
                 Task.detached {
-                    do { let value = CommandLine.arguments.contains("--verify-writes") ? try await MouseService.shared.verifyWrites() : try await MouseService.shared.read(); let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; print(String(data: try encoder.encode(value), encoding: .utf8)!) }
+                    do {
+                        if CommandLine.arguments.contains("--status") {
+                            let value = try await MouseService.shared.telemetry()
+                            let data = try JSONEncoder().encode(value)
+                            print(String(data: data, encoding: .utf8)!)
+                            semaphore.signal(); return
+                        }
+                        let value = CommandLine.arguments.contains("--verify-writes") ? try await MouseService.shared.verifyWrites() : try await MouseService.shared.read(); let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; print(String(data: try encoder.encode(value), encoding: .utf8)!) }
                     catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
                     semaphore.signal()
                 }

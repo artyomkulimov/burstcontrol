@@ -72,6 +72,26 @@ struct Settings: Codable, Equatable, Sendable {
     }
 }
 
+struct DeviceTelemetry: Codable, Equatable, Sendable {
+    let transport: String
+    let batteryPercent: Int?
+    let charging: Bool?
+    var batterySymbol: String {
+        if charging == true { return "battery.100.bolt" }
+        guard let batteryPercent else { return "battery.0" }
+        let level = batteryPercent < 10 ? 0 : batteryPercent < 35 ? 25 : batteryPercent < 60 ? 50 : batteryPercent < 85 ? 75 : 100
+        return "battery.\(level)"
+    }
+    init(transport: String, status: [UInt8]?) {
+        self.transport = transport
+        // Vendor copies status[0...9] to state+0x10b. UI reads +0x110 / +0x112.
+        if let status, status.count == 10, status[5] <= 100 {
+            batteryPercent = Int(status[5])
+            charging = status[7] != 0
+        } else { batteryPercent = nil; charging = nil }
+    }
+}
+
 struct Backup: Codable {
     let created: Date
     let device: String
@@ -95,6 +115,16 @@ actor MouseService {
         return settings
     }
     func read() throws -> Settings { try snapshot(HIDConnection()) }
+    func readLive() throws -> (Settings, DeviceTelemetry) {
+        let connection = try HIDConnection()
+        let settings = try snapshot(connection)
+        let status = try? connection.read(kind: 0, size: 10)
+        return (settings, DeviceTelemetry(transport: connection.transportName, status: status))
+    }
+    func telemetry() throws -> DeviceTelemetry {
+        let connection = try HIDConnection()
+        return DeviceTelemetry(transport: connection.transportName, status: try connection.read(kind: 0, size: 10))
+    }
     func verifyWrites() throws -> Settings {
         let connection = try HIDConnection()
         let before = try snapshot(connection)

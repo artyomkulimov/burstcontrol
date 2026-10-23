@@ -11,16 +11,25 @@ final class HIDConnection {
     private let manager: IOHIDManager
     private let device: IOHIDDevice
     private var opened = false
+    let wired: Bool
+    var transportName: String { wired ? "USB cable" : "2.4 GHz receiver" }
+    private var target: UInt8 { wired ? 0 : 1 }
+    static let products = [0x5002, 0x5004]
+    static var matches: [[String: Any]] {
+        products.map { [kIOHIDVendorIDKey: 0x10f5, kIOHIDProductIDKey: $0,
+                        kIOHIDDeviceUsagePageKey: 0xff00, kIOHIDDeviceUsageKey: 1] }
+    }
     init() throws {
         manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        let match: [String: Any] = [kIOHIDVendorIDKey: 0x10f5, kIOHIDProductIDKey: 0x5004,
-                                   kIOHIDDeviceUsagePageKey: 0xff00, kIOHIDDeviceUsageKey: 1]
-        IOHIDManagerSetDeviceMatching(manager, match as CFDictionary)
-        guard let set = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>, set.count == 1,
-              let found = set.first else {
-            throw MouseError("Connect one Burst II Air USB dongle and turn the mouse on. This build supports the 2.4 GHz dongle connection.")
+        IOHIDManagerSetDeviceMatchingMultiple(manager, Self.matches as CFArray)
+        let devices = (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>) ?? []
+        let cables = devices.filter { (IOHIDDeviceGetProperty($0, kIOHIDProductIDKey as CFString) as? NSNumber)?.intValue == 0x5002 }
+        let candidates = cables.isEmpty ? Array(devices) : Array(cables)
+        guard candidates.count == 1, let found = candidates.first else {
+            throw MouseError("Connect one Burst II Air by USB cable or receiver. Multiple devices of the same connection type cannot be configured together.")
         }
         device = found
+        wired = !cables.isEmpty
         let result = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
         if result == kIOReturnNotPermitted {
             throw MouseError("macOS requires Input Monitoring permission to open this mouse interface. Enable the installed Burst Control app in System Settings → Privacy & Security → Input Monitoring, then quit and reopen it. If it is already enabled after a rebuild, remove its old entry and add the current app again. Burst Control does not capture input events.")
@@ -30,16 +39,16 @@ final class HIDConnection {
     }
     deinit { if opened { IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone)) } }
 
-    static func packet(_ command: UInt8, _ payload: [UInt8]) throws -> [UInt8] {
+    static func packet(_ command: UInt8, _ payload: [UInt8], target: UInt8 = 1) throws -> [UInt8] {
         guard payload.count <= 58 else { throw MouseError("Packet too large") }
         var bytes = [UInt8](repeating: 0, count: 64)
-        bytes[0] = 3; bytes[2] = command; bytes[3] = UInt8(payload.count); bytes[5] = 1
+        bytes[0] = 3; bytes[2] = command; bytes[3] = UInt8(payload.count); bytes[5] = target
         bytes.replaceSubrange(6..<(6 + payload.count), with: payload)
         bytes[1] = bytes[2...].reduce(0, &+)
         return bytes
     }
     func exchange(_ command: UInt8, _ payload: [UInt8] = []) throws -> [UInt8] {
-        let packet = try Self.packet(command, payload)
+        let packet = try Self.packet(command, payload, target: target)
         let sent = packet.withUnsafeBufferPointer {
             IOHIDDeviceSetReport(device, kIOHIDReportTypeFeature, 3, $0.baseAddress!, $0.count)
         }
@@ -60,6 +69,7 @@ final class HIDConnection {
         return body
     }
     private func transaction<T>(_ work: () throws -> T) throws -> T {
+        if wired { return try work() }
         _ = try exchange(0x80)
         do {
             let value = try work()

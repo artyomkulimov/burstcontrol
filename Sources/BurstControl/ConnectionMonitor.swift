@@ -10,7 +10,7 @@ final class ConnectionMonitor {
         return !devices.isEmpty
     }
     init() {
-        IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: 0x10f5, kIOHIDProductIDKey: 0x5004] as CFDictionary)
+        IOHIDManagerSetDeviceMatchingMultiple(manager, HIDConnection.matches as CFArray)
         let callback: IOHIDDeviceCallback = { context, _, _, _ in
             guard let context else { return }
             Unmanaged<ConnectionMonitor>.fromOpaque(context).takeUnretainedValue().changed?()

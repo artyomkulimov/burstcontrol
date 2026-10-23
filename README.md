@@ -12,7 +12,7 @@ Turtle Beach. Vendor software, firmware, and downloaded binaries are not include
 
 ## Run
 
-Build from source using the instructions below, quit any running copy, run `./install-app.sh`, then open `~/Applications/Burst Control.app`. Connect the 2.4 GHz dongle and wake the mouse.
+Build from source using the instructions below, quit any running copy, run `./install-app.sh`, then open `~/Applications/Burst Control.app`. Connect the mouse by USB cable or plug in its 2.4 GHz receiver and wake it.
 If macOS denies access, enable **Burst Control** in **System Settings → Privacy &
 Security → Input Monitoring**, then quit and reopen. The configuration feature
 report shares a HID interface with mouse input; the app never registers input
@@ -39,12 +39,15 @@ values for review; click Apply to restore them. Backups live in
 | Lift-off distance | Very low, Low | Vendor modes mapped; original-value write/read verified |
 | Angle snapping | Off, On | Vendor field mapped; sensor block round-trip verified |
 | Motion sync | Off, On | Vendor reads zero as off and any nonzero byte (including 255) as on; explicit edits write 0/1 |
+| Battery | 0–100%, read only | Status block 0, byte 5; charging flag at byte 7 |
 | Current profile | Read only | Profile changes during transactions are rejected |
 
 DPI stage enabling and switching, wireless optimization, sleep interval, button
 assignments and custom surface calibration remain unexposed until their full
 semantics and supported values are verified. Unmapped bytes are preserved.
-Only USB dongle VID:PID `10f5:5004` is supported; cable/Bluetooth paths are untested.
+USB receiver `10f5:5004` and wired mouse `10f5:5002` are supported. Cable is preferred
+when both are present. Bluetooth is unsupported. Battery percentage and charging
+state come from the read-only device status block; invalid values display as unavailable.
 Changing settings has not been benchmarked for physical input latency. A firmware
 setting of 0 ms does not imply zero total latency. Power-cycle persistence is
 not yet tested. The app never flashes firmware.
@@ -100,7 +103,7 @@ On 2026-10-23, initial device read returned 2 ms. The explicit write to 0 ms
 succeeded, as did immediate read-back and a fresh-process read after closing
 and reopening the HID handle. Power-cycle persistence has not yet been tested.
 This reads the firmware setting; it does not measure physical click latency.
-Only the dongle transport has been tested. The utility does not update firmware.
+This original Python utility was tested only with the dongle; the native app also supports cable. Neither updates firmware.
 
 The captured settings fixture in `Tests/Fixtures/settings.json` contains device
 configuration bytes only. Local investigation logs are excluded from this repository.
@@ -145,3 +148,5 @@ Original project code is available under the [MIT license](LICENSE).
 
 Motion sync investigation: [protocol notes](docs/motion-sync.md).
 The reproducible raster app icon is documented in [Assets](Assets/README.md).
+
+Read [How the protocol was reverse engineered](docs/reverse-engineering.md) for the investigation, evidence, and limitations.

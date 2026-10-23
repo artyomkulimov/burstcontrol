@@ -5,6 +5,13 @@ import Foundation
         // Captured packets from the successful hardware transaction.
         let acquire = try HIDConnection.packet(0x80, [])
         precondition(Array(acquire.prefix(6)) == [3, 0x81, 0x80, 0, 0, 1])
+        let wired = try HIDConnection.packet(0x82, [64, 0, 0, 0, 0, 0, 0, 10, 0, 0], target: 0)
+        precondition(wired[5] == 0 && wired[1] == wired[2...].reduce(0, &+))
+        let power = DeviceTelemetry(transport: "USB cable", status: [0,0,0,0,0,51,0,1,0,0])
+        precondition(power.batteryPercent == 51 && power.charging == true)
+        precondition(DeviceTelemetry(transport: "2.4 GHz receiver", status: [0,0,0,0,0,100,0,0,0,0]).batteryPercent == 100)
+        precondition(DeviceTelemetry(transport: "USB cable", status: [0,0,0,0,0,255,0,0,0,0]).batteryPercent == nil)
+        precondition(DeviceTelemetry(transport: "USB cable", status: [51]).batteryPercent == nil)
         let read = try HIDConnection.packet(0x82, [64, 0, 6, 0, 0, 0, 0, 1, 0, 0])
         precondition(Array(read.prefix(16)) == [3, 0xd4, 0x82, 10, 0, 1, 64, 0, 6, 0, 0, 0, 0, 1, 0, 0])
         do { _ = try HIDConnection.packet(0x82, Array(repeating: 0, count: 59)); fatalError("Oversize packet accepted") } catch is MouseError {}
