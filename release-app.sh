@@ -13,7 +13,7 @@ xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null
 ./test.sh
 CONFIGURATION=release ./build-app.sh
 bundle='dist/Burst Control.app'
-codesign -dv "$bundle" 2>&1 | /usr/bin/grep -F 'Authority=Developer ID Application:' >/dev/null
+codesign -dv --verbose=2 "$bundle" 2>&1 | /usr/bin/grep -F 'Authority=Developer ID Application:' >/dev/null
 version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$bundle/Contents/Info.plist")
 architecture=$(uname -m)
 archive="dist/Burst-Control-${version}-macOS-${architecture}.zip"
