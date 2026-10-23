@@ -28,7 +28,7 @@ values for review; click Apply to restore them. Backups live in
 | Polling rate | 125, 250, 500, 1000 Hz | Vendor enumeration mapped; sensor block round-trip verified |
 | Lift-off distance | Very low, Low | Vendor modes mapped; original-value write/read verified |
 | Angle snapping | Off, On | Vendor field mapped; sensor block round-trip verified |
-| Motion sync | Off, On only for recognized firmware values | Current value 255 is undocumented: displayed, editing disabled |
+| Motion sync | Off, On | Vendor reads zero as off and any nonzero byte (including 255) as on; explicit edits write 0/1 |
 | Current profile | Read only | Profile changes during transactions are rejected |
 
 DPI stage enable/selection, wireless optimization, sleep interval, button
@@ -132,3 +132,6 @@ valid transactions succeeded after reproducing the vendor handshake.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development and protocol verification.
 Original project code is available under the [MIT license](LICENSE).
+
+Motion sync investigation: [protocol notes](docs/motion-sync.md).
+The raster app icon and its generation prompt are in [Assets](Assets/README.md).

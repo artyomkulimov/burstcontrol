@@ -11,6 +11,15 @@ import Foundation
         let fixture = try Data(contentsOf: URL(fileURLWithPath: "Tests/Fixtures/settings.json"))
         let original = try JSONDecoder().decode(Settings.self, from: fixture)
         precondition((0..<5).map { original.dpi($0) } == [400, 800, 1200, 1600, 3200])
+        precondition(original.motionSync == 255 && original.motionSyncEnabled)
+        var motion = original
+        motion.motionSyncEnabled = false
+        precondition(motion.motionSync == 0)
+        try motion.validate(against: original)
+        motion.motionSyncEnabled = true
+        precondition(motion.motionSync == 1)
+        precondition(motion.sensor.dropLast() == original.sensor.dropLast())
+        try motion.validate(against: original)
         var changed = original
         changed.setDPI(4, 26000)
         precondition(changed.dpi(4) == 26000)

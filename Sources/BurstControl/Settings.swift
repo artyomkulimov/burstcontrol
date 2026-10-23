@@ -15,6 +15,12 @@ struct Settings: Codable, Equatable, Sendable {
         get { Int(sensor[39]) }
         set { sensor[39] = UInt8(newValue) }
     }
+    // Swarm II reads byte 39 with cmp 0 / setne (0x180146297).
+    // Preserve noncanonical true values until explicitly edited.
+    var motionSyncEnabled: Bool {
+        get { motionSync != 0 }
+        set { motionSync = newValue ? 1 : 0 }
+    }
     var angleSnapping: Int {
         get { Int(sensor[37]) }
         set { sensor[37] = UInt8(newValue) }
