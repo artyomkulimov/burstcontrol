@@ -23,7 +23,7 @@ final class HIDConnection {
         device = found
         let result = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
         if result == kIOReturnNotPermitted {
-            throw MouseError("macOS requires Input Monitoring permission to open this mouse interface. Enable Burst Control in System Settings → Privacy & Security → Input Monitoring, then quit and reopen the app. Burst Control does not capture input events.")
+            throw MouseError("macOS requires Input Monitoring permission to open this mouse interface. Enable the installed Burst Control app in System Settings → Privacy & Security → Input Monitoring, then quit and reopen it. If it is already enabled after a rebuild, remove its old entry and add the current app again. Burst Control does not capture input events.")
         }
         guard result == kIOReturnSuccess else { throw MouseError("Cannot open mouse HID interface (\(result)).") }
         opened = true

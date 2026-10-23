@@ -9,12 +9,19 @@ Turtle Beach. Vendor software, firmware, and downloaded binaries are not include
 
 ## Run
 
-Build from source using the instructions below, then open `dist/Burst Control.app`. Connect the 2.4 GHz dongle and wake the mouse.
+Build from source using the instructions below, quit any running copy, run `./install-app.sh`, then open `~/Applications/Burst Control.app`. Connect the 2.4 GHz dongle and wake the mouse.
 If macOS denies access, enable **Burst Control** in **System Settings → Privacy &
 Security → Input Monitoring**, then quit and reopen. The configuration feature
 report shares a HID interface with mouse input; the app never registers input
 callbacks or records keys/clicks. Local development builds are ad-hoc signed;
-rebuilding may require renewing permission.
+rebuilding changes the signature and may leave a stale permission even when the
+toggle is on. Remove the old Burst Control entry with the minus button, then use
+plus to add `~/Applications/Burst Control.app`, enable it, and restart the app.
+If removal does not clear it, `tccutil reset ListenEvent local.burstcontrol.app`
+revokes only this app's Input Monitoring record; then add the installed app again.
+Keep using the installed copy. A stable path avoids duplicate registrations,
+but does not make ad-hoc signatures survive rebuilds. Distribution builds should
+use a consistent signing identity.
 
 Change controls and click **Apply to mouse**. Every write is backed up, then
 read back and compared. **Backups → Load previous settings** stages the prior
@@ -134,4 +141,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development and protocol verification
 Original project code is available under the [MIT license](LICENSE).
 
 Motion sync investigation: [protocol notes](docs/motion-sync.md).
-The raster app icon and its generation prompt are in [Assets](Assets/README.md).
+The reproducible raster app icon is documented in [Assets](Assets/README.md).
