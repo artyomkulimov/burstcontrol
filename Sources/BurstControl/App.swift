@@ -66,9 +66,15 @@ import AppKit
         let token = generation
         if !connected { status = "Connecting…" }
         Task {
+            defer {
+                busy = false
+                // A USB presence callback can arrive during the first read.
+                // Retry that superseded read even when the window is inactive.
+                if token != generation, monitor.connected { refresh() }
+            }
             do {
                 let (value, telemetry) = try await MouseService.shared.readLive()
-                guard token == generation else { busy = false; return }
+                guard token == generation else { return }
                 self.telemetry = telemetry
                 if let saved, let draft, dirty {
                     if saved.profile != value.profile || !saved.sameConfiguration(as: value) {
@@ -88,7 +94,6 @@ import AppKit
                     } else { status = "Mouse not responding"; self.error = nil }
                 }
             }
-            busy = false
         }
     }
     func resolveConflict(keepEdits: Bool) {
