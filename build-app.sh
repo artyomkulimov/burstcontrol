@@ -5,8 +5,6 @@ configuration=${CONFIGURATION:-release}
 swift build -c "$configuration"
 ./build-icon.sh
 bundle="dist/Burst Control.app"
-# Assemble a fresh bundle so interrupted signing cannot leave stale sealed files.
-rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp ".build/$configuration/BurstControl" "$bundle/Contents/MacOS/BurstControl"
 cp dist/AppIcon.icns "$bundle/Contents/Resources/AppIcon.icns"
