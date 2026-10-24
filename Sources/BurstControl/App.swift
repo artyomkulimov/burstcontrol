@@ -266,6 +266,7 @@ private struct DPIEditor: View {
                 .foregroundStyle(active ? Color.accentColor : Color.primary)
                 .accessibilityLabel("DPI stage \(stage + 1)")
                 .focused($focused)
+                .background(ClickOutsideToEndEditing(isEditing: focused) { focused = false })
                 .onChange(of: text) { _ in if let number = parsed { value = number } }
                 .onChange(of: focused) { active in if !active { text = String(value) } }
                 .onChange(of: value) { number in if !focused { text = String(number) } }
