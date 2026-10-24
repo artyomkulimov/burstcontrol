@@ -19,7 +19,23 @@ import AppKit
     private var generation = 0
     private var stageReadInFlight = false
     private var lastRefreshAttempt = Date.distantPast
+    // Debug-only visual fixture: never opens HID or writes settings.
+    private var previewing = false
+    init() {
+        #if DEBUG
+        if CommandLine.arguments.contains("--preview") {
+            previewing = true
+            let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            if let data = try? Data(contentsOf: root.appendingPathComponent("Tests/Fixtures/settings.json")),
+               let fixture = try? JSONDecoder().decode(Settings.self, from: data) {
+                saved = fixture; draft = fixture; connected = true; status = "Preview · Connected"
+                telemetry = DeviceTelemetry(transport: "USB cable", status: [0,0,0,0,0,85,0,0,0,0])
+            }
+        }
+        #endif
+    }
     func start() {
+        guard !previewing else { return }
         guard loop == nil else { return }
         monitor.changed = { [weak self] in Task { @MainActor in self?.presenceChanged() } }
         presenceChanged()
@@ -59,6 +75,7 @@ import AppKit
         } else { refresh() }
     }
     func refresh() {
+        guard !previewing else { return }
         guard !busy, conflict == nil else { return }
         lastRefreshAttempt = Date()
         guard monitor.connected else { connected = false; status = "Not connected"; return }
@@ -99,6 +116,7 @@ import AppKit
         saved = latest; conflict = nil
     }
     func apply() {
+        guard !previewing else { draft = saved; return }
         guard !busy, let desired = draft, let expected = saved else { return }
         busy = true; saving = true; error = nil; status = "Saving…"
         Task {
@@ -109,6 +127,7 @@ import AppKit
         }
     }
     func restore() {
+        guard !previewing else { return }
         guard !busy, let current = saved else { return }
         busy = true; error = nil
         Task {
@@ -137,50 +156,15 @@ struct ContentView: View {
     @StateObject private var model = AppModel()
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable().frame(width: 48, height: 48)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Burst II Air").font(.system(size: 22, weight: .semibold))
-                    Label(model.status, systemImage: model.connected ? "circle.fill" : "circle")
-                        .font(.system(size: 15)).foregroundStyle(model.connected ? .green : .secondary)
-                }
-                Spacer()
-                if model.connected, let telemetry = model.telemetry {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        if let percent = telemetry.batteryPercent {
-                            Label("\(percent)%", systemImage: telemetry.batterySymbol)
-                                .font(.system(size: 17, weight: .medium))
-                                .help(telemetry.charging == true ? "Charging" : "Battery level reported by mouse")
-                        } else { Text("Battery unavailable").font(.system(size: 14)).foregroundStyle(.secondary) }
-                        Text(telemetry.transport).font(.system(size: 13)).foregroundStyle(.secondary)
-                    }
-                }
-                Menu {
-                    Text(model.saved.map { "Onboard profile \($0.profileIndex + 1) of \($0.profile[1])" } ?? "Burst II Air")
-                    Button("Load previous settings") { model.restore() }.disabled(!model.hasBackup || model.busy || !model.connected)
-                    Button("Show backup folder") { NSWorkspace.shared.open(MouseService.directory) }.disabled(!model.hasBackup)
-                } label: { Image(systemName: "ellipsis.circle").font(.title2) }
-                .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Device details")
-            }.padding(20)
-            Divider()
             if let settings = model.draft {
                 Form {
-                    Section("Response") {
-                        Picker("Debounce", selection: model.binding(\.debounceMS)) {
-                            ForEach(0...10, id: \.self) { Text("\($0) ms").tag($0) }
-                        }
-                        Picker("Polling rate", selection: model.binding(\.pollingIndex)) {
-                            ForEach(0..<4) { Text("\([125,250,500,1000][$0]) Hz").tag($0) }
-                        }
-                    }
                     Section {
                         VStack(alignment: .leading, spacing: 18) {
                             HStack {
-                                Text("DPI speeds").font(.system(size: 16, weight: .semibold))
+                                Text("Sensitivity").font(.title3.weight(.semibold))
                                 Spacer()
                                 if model.connected, let saved = model.saved, let stage = saved.activeStage {
-                                    Text("\(saved.dpi(stage)) DPI active").font(.system(size: 16, weight: .medium)).foregroundStyle(Color.accentColor)
+                                    Text("\(saved.dpi(stage)) DPI active").font(.headline).monospacedDigit().foregroundStyle(Color.accentColor)
                                 }
                             }
                             HStack(spacing: 14) {
@@ -191,6 +175,14 @@ struct ContentView: View {
                             Text("Click a value to edit. Switch speeds with the mouse’s DPI button.")
                                 .font(.system(size: 14)).foregroundStyle(.secondary)
                         }.padding(.vertical, 12)
+                    }
+                    Section("Response") {
+                        Picker("Debounce", selection: model.binding(\.debounceMS)) {
+                            ForEach(0...10, id: \.self) { Text("\($0) ms").tag($0) }
+                        }
+                        Picker("Polling rate", selection: model.binding(\.pollingIndex)) {
+                            ForEach(0..<4) { Text("\([125,250,500,1000][$0]) Hz").tag($0) }
+                        }
                     }
                     Section("Tracking") {
                         Picker("Lift-off distance", selection: model.binding(\.liftOffMode)) {
@@ -227,19 +219,60 @@ struct ContentView: View {
                     }
                 }.padding(20)
             }
-            if model.dirty {
-                Divider()
-                HStack {
-                    Text("Unsaved changes").foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Revert") { model.draft = model.saved }.disabled(model.saving)
-                    Button("Apply") { model.apply() }.keyboardShortcut(.defaultAction)
-                        .disabled(model.busy || !model.connected || model.conflict != nil)
-                }.padding(20)
-            }
         }
         .font(.system(size: 16)).controlSize(.large)
-        .frame(minWidth: 700, idealWidth: 760, minHeight: 640, idealHeight: 700)
+        .frame(minWidth: 680, idealWidth: 760, minHeight: 600, idealHeight: 720)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 10) {
+                    Image(systemName: "computermouse").font(.title2)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Burst II Air").font(.headline)
+                        Label(model.status, systemImage: model.connected ? "circle.fill" : "circle")
+                            .font(.subheadline).labelStyle(.titleAndIcon).fixedSize()
+                            .foregroundStyle(model.connected ? Color.green : Color.secondary)
+                    }
+                }.accessibilityElement(children: .combine)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                if model.connected, let telemetry = model.telemetry {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        if let percent = telemetry.batteryPercent {
+                            Label("\(percent)%", systemImage: telemetry.batterySymbol)
+                                .font(.headline).monospacedDigit().labelStyle(.titleAndIcon).fixedSize()
+                                .help(telemetry.charging == true ? "Charging" : "Battery level reported by mouse")
+                        } else { Text("Battery unavailable").font(.subheadline) }
+                        Text(telemetry.transport).font(.subheadline).foregroundStyle(.secondary)
+                    }.padding(.horizontal, 8)
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Text(model.saved.map { "Onboard profile \($0.profileIndex + 1) of \($0.profile[1])" } ?? "Burst II Air")
+                    Button("Load previous settings") { model.restore() }
+                        .disabled(!model.hasBackup || model.busy || !model.connected)
+                    Button("Show backup folder") { NSWorkspace.shared.open(MouseService.directory) }
+                        .disabled(!model.hasBackup)
+                } label: { Label("Device details", systemImage: "ellipsis") }
+                .help("Device details and backups")
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if model.dirty {
+                HStack(spacing: 16) {
+                    Text(model.saving ? "Saving…" : "Unsaved changes")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Button("Revert") { model.draft = model.saved }
+                        .buttonStyle(.borderless).disabled(model.saving)
+                    Button("Apply") { model.apply() }
+                        .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                        .disabled(model.busy || !model.connected || model.conflict != nil)
+                }
+                .padding(.leading, 20).padding(.trailing, 8).padding(.vertical, 8)
+                .modifier(ActionBarMaterial())
+                .padding(.horizontal, 24).padding(.bottom, 16).padding(.top, 8)
+            }
+        }
         .onAppear { model.start() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refresh() }
     }
@@ -258,13 +291,13 @@ private struct DPIEditor: View {
     }
     var body: some View {
         VStack(spacing: 8) {
-            Text("\(stage + 1)").font(.system(size: 13)).foregroundStyle(.secondary)
+            Text("Stage \(stage + 1)").font(.subheadline).foregroundStyle(.secondary)
             TextField("DPI", text: $text)
                 .labelsHidden()
                 .textFieldStyle(.plain).multilineTextAlignment(.center)
-                .font(.system(size: 25, weight: active ? .semibold : .regular, design: .rounded))
+                .font(.system(size: 28, weight: active ? .semibold : .regular)).monospacedDigit()
                 .foregroundStyle(active ? Color.accentColor : Color.primary)
-                .accessibilityLabel("DPI stage \(stage + 1)")
+                .accessibilityLabel("DPI stage \(stage + 1)" + (active ? ", active" : ""))
                 .focused($focused)
                 .onChange(of: text) { _ in if let number = parsed { value = number } }
                 .onChange(of: focused) { active in if !active { text = String(value) } }
@@ -274,7 +307,28 @@ private struct DPIEditor: View {
             Capsule().fill(active ? Color.accentColor : Color.clear).frame(height: 3)
             Text(changed ? "Edited" : active ? "Active" : " ")
                 .font(.system(size: 13)).foregroundStyle(changed ? Color.orange : Color.secondary)
-        }.frame(maxWidth: .infinity).padding(.vertical, 6)
+        }.frame(maxWidth: .infinity).padding(.vertical, 14)
+            .background(active ? Color.accentColor.opacity(0.08) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(focused ? Color.accentColor : Color.clear, lineWidth: 2)
+            }
+    }
+}
+
+// Glass belongs to the floating control layer, not the settings cards.
+private struct ActionBarMaterial: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content.background(Color(nsColor: .windowBackgroundColor), in: Capsule())
+                .overlay(Capsule().strokeBorder(.secondary.opacity(0.3)))
+        } else if #available(macOS 26.0, *) {
+            content.glassEffect(.regular, in: .capsule)
+        } else {
+            content.background(.regularMaterial, in: Capsule())
+        }
     }
 }
 
@@ -301,6 +355,8 @@ private struct DPIEditor: View {
     }
     var body: some Scene {
         WindowGroup("Burst Control") { ContentView() }
+            .windowToolbarStyle(.unified)
+            .defaultSize(width: 760, height: 720)
             .commands { CommandGroup(replacing: .newItem) {} }
     }
 }
