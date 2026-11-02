@@ -1,8 +1,8 @@
 <div align="center">
   <img src="Assets/AppIcon.png" width="88" height="88" alt="Burst Control icon">
   <h1>Burst Control</h1>
-  <p>A native macOS companion for the Turtle Beach Burst II Air.</p>
-  <p>Adjust your mouse directly over USB. No Windows PC or virtual machine required.</p>
+  <p>Mac software for the Turtle Beach Burst II Air (Burst 2 Air) gaming mouse.</p>
+  <p>Change DPI, polling rate, debounce, and more on macOS, directly over USB. No Windows PC or virtual machine required.</p>
   <p>
     <a href="https://github.com/artyomkulimov/burstcontrol/actions/workflows/checks.yml"><img src="https://github.com/artyomkulimov/burstcontrol/actions/workflows/checks.yml/badge.svg" alt="Build and protocol checks"></a>
     <img src="https://img.shields.io/badge/macOS-13%2B-333333" alt="macOS 13 or later">
